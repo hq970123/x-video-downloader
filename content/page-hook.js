@@ -1,0 +1,12 @@
+(()=>{
+const SOURCE='xvd-page-hook-v7',sent=new Map(),MAX=25000000,MAX_SENT=500;
+function variants(xs){return (xs||[]).filter(v=>v&&typeof v.url==='string'&&/^https:\/\/video\.twimg\.com\//.test(v.url)&&(/\.mp4(?:\?|$)/i.test(v.url)||v.content_type==='video/mp4')).map(v=>({url:v.url,bitrate:+v.bitrate||0,contentType:v.content_type||'video/mp4'}))}
+function emit(id,media){if(!id||!Array.isArray(media))return;const videos=media.map((m,index)=>({index,type:m?.type||'',mediaKey:m?.media_key||'',poster:m?.media_url_https||'',variants:variants(m?.video_info?.variants)})).filter(v=>v.variants.length);if(!videos.length)return;const sig=JSON.stringify(videos.map(v=>v.variants.map(x=>x.url)));const key=String(id);if(sent.get(key)===sig)return;sent.delete(key);sent.set(key,sig);while(sent.size>MAX_SENT)sent.delete(sent.keys().next().value);window.postMessage({source:SOURCE,type:'media',id:key,videos},'*')}
+function walk(n,d=0,seen=new WeakSet()){if(!n||typeof n!=='object'||d>30)return;if(seen.has(n))return;seen.add(n);const id=n.rest_id||n.id_str;const l=n.legacy||n,m=l?.extended_entities?.media||l?.entities?.media;if(id&&Array.isArray(m))emit(id,m);if(Array.isArray(n)){for(const x of n)walk(x,d+1,seen);return}for(const k in n){if(k==='binding_values'||k==='features')continue;try{walk(n[k],d+1,seen)}catch{}}}
+function parse(t){if(!t||t.length>MAX)return;try{walk(JSON.parse(t))}catch{}}
+function inspectResponse(r){try{const u=String(r.url||'');if(/(?:x|twitter)\.com/.test(u)){const len=Number(r.headers?.get?.('content-length')||0);if(!len||len<=MAX)r.clone().text().then(parse).catch(()=>{})}}catch{}}
+const f=window.fetch;if(f)window.fetch=async function(...a){const r=await f.apply(this,a);inspectResponse(r);return r};
+const oo=XMLHttpRequest.prototype.open,os=XMLHttpRequest.prototype.send;XMLHttpRequest.prototype.open=function(m,u,...r){this.__xvdUrl=String(u||'');return oo.call(this,m,u,...r)};XMLHttpRequest.prototype.send=function(...a){if(/(?:x|twitter)\.com/.test(this.__xvdUrl||''))this.addEventListener('load',()=>{try{if(typeof this.responseText==='string')parse(this.responseText)}catch{}},{once:true});return os.apply(this,a)};
+function scanScripts(){document.querySelectorAll('script').forEach(s=>{const t=s.textContent||'';if(t.includes('video_info')&&t.length<MAX)parse(t)})}
+if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',scanScripts,{once:true});else scanScripts();
+})();

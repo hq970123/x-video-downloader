@@ -1,0 +1,8 @@
+const active=new Map();
+const HISTORY_KEY='downloadHistory',MAX_HISTORY=100;
+async function addHistory(entry){const r=await chrome.storage.local.get({[HISTORY_KEY]:[]});const list=[entry,...r[HISTORY_KEY].filter(x=>x.url!==entry.url)].slice(0,MAX_HISTORY);await chrome.storage.local.set({[HISTORY_KEY]:list})}
+chrome.runtime.onMessage.addListener((message,sender,sendResponse)=>{
+  if(message?.type==='XVD_DOWNLOAD'&&message.url){chrome.downloads.download({url:message.url,filename:message.filename||undefined,saveAs:false}).then(id=>{active.set(id,{tabId:sender.tab?.id,url:message.url,filename:message.filename||''});sendResponse({ok:true,id})}).catch(error=>sendResponse({ok:false,error:error.message}));return true;}
+  if(message?.type==='XVD_CLEAR_HISTORY'){chrome.storage.local.set({[HISTORY_KEY]:[]}).then(()=>sendResponse({ok:true}));return true}
+});
+chrome.downloads.onChanged.addListener(async delta=>{if(!active.has(delta.id))return;const info=active.get(delta.id);let state=delta.state?.current||'in_progress',percent=null,item=null;try{[item]=await chrome.downloads.search({id:delta.id});if(item&&item.totalBytes>0)percent=Math.min(100,Math.round((item.bytesReceived/item.totalBytes)*100));if(item?.state)state=item.state}catch{}if(info.tabId)chrome.tabs.sendMessage(info.tabId,{type:'XVD_PROGRESS',id:delta.id,state,percent}).catch(()=>{});if(state==='complete'){await addHistory({url:info.url,filename:item?.filename?.split(/[\\/]/).pop()||info.filename,completedAt:Date.now()});active.delete(delta.id)}else if(state==='interrupted')active.delete(delta.id);});
